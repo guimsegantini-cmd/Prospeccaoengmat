@@ -206,6 +206,12 @@ export default function App() {
     }
   }, [user]);
 
+  // Derived Unique Builders for Autocomplete
+  const uniqueBuilders = useMemo(() => {
+    const names = sites.map(s => s.builderName).filter(Boolean);
+    return Array.from(new Set(names)).sort();
+  }, [sites]);
+
   // --- HANDLERS ---
   const handleLogout = async () => {
     await logout();
@@ -247,23 +253,31 @@ export default function App() {
     const wb = XLSX.utils.book_new();
 
     // 1. Prepare Obras Sheet
-    const sitesData = sites.map(site => ({
-      ID: site.id, // Export ID to link with tasks, though it won't be reused on simple import unless logic added
-      Obra: site.siteName,
-      Construtora: site.builderName,
-      Responsavel: site.responsibleName,
-      Telefone: site.phone,
-      Email: site.email,
-      Endereco: site.address,
-      Bairro: site.neighborhood,
-      Lat: site.lat,
-      Lng: site.lng,
-      Fase: site.phase,
-      Perfil: site.profile,
-      Status: site.leadStage,
-      Representadas: site.connectedRepresentations ? site.connectedRepresentations.join(', ') : '',
-      CriadoEm: new Date(site.createdAt).toLocaleDateString()
-    }));
+    const sitesData = sites.map(site => {
+        // Flatten primary contact for export simplicity, or we could export a separate sheet for contacts
+        // For this version, we export the primary contact to the main row
+        const primary = site.contacts?.[0] || {};
+        
+        return {
+            ID: site.id, 
+            Obra: site.siteName,
+            Construtora: site.builderName,
+            // Export legacy or primary contact fields
+            Responsavel: primary.name || site.responsibleName || '',
+            Cargo: primary.role || '',
+            Telefone: primary.phone || site.phone || '',
+            Email: primary.email || site.email || '',
+            Endereco: site.address,
+            Bairro: site.neighborhood,
+            Lat: site.lat,
+            Lng: site.lng,
+            Fase: site.phase,
+            Perfil: site.profile,
+            Status: site.leadStage,
+            Representadas: site.connectedRepresentations ? site.connectedRepresentations.join(', ') : '',
+            CriadoEm: new Date(site.createdAt).toLocaleDateString()
+        };
+    });
 
     const wsSites = XLSX.utils.json_to_sheet(sitesData);
     XLSX.utils.book_append_sheet(wb, wsSites, "Obras");
@@ -323,10 +337,10 @@ export default function App() {
 
             // 1. Reconstruct Tasks
             const siteTasks = rawTasks
-                .filter(t => t.ID_Obra === row.ID) // Match by ID from the sheet
+                .filter(t => t.ID_Obra === row.ID) 
                 .map(t => ({
-                    id: Math.random().toString(36).substr(2, 9), // Generate new ID
-                    siteId: '', // Will be implicitly handled by nesting, or we can leave empty
+                    id: Math.random().toString(36).substr(2, 9), 
+                    siteId: '', 
                     description: t.Descricao,
                     notes: t.Obs,
                     date: t.Data,
@@ -336,13 +350,24 @@ export default function App() {
                     createdAt: Date.now()
                 }));
 
-            // 2. Reconstruct Site Object
+            // 2. Reconstruct Contact Structure from Flat Excel Columns
+            const contacts = [{
+                name: row.Responsavel || '',
+                role: row.Cargo || 'Responsável',
+                phone: row.Telefone || '',
+                email: row.Email || ''
+            }];
+
+            // 3. Reconstruct Site Object
             const newSite: Omit<ConstructionSite, 'id'> = {
                 siteName: row.Obra,
                 builderName: row.Construtora,
+                // Legacy fields populated for safety
                 responsibleName: row.Responsavel || '',
                 phone: row.Telefone || '',
                 email: row.Email || '',
+                
+                contacts: contacts,
                 address: row.Endereco || '',
                 neighborhood: row.Bairro || '',
                 lat: row.Lat,
@@ -351,7 +376,7 @@ export default function App() {
                 profile: row.Perfil || 'Médio Padrão',
                 leadStage: row.Status || 'Mapeado',
                 connectedRepresentations: row.Representadas ? row.Representadas.split(',').map((s: string) => s.trim()) : [],
-                createdAt: Date.now(), // New timestamp
+                createdAt: Date.now(), 
                 tasks: siteTasks
             };
 
@@ -381,7 +406,8 @@ export default function App() {
       result = result.filter(s => 
         s.siteName.toLowerCase().includes(lower) || 
         s.builderName.toLowerCase().includes(lower) ||
-        s.responsibleName.toLowerCase().includes(lower) ||
+        // Search in primary contact or legacy field
+        (s.contacts?.[0]?.name || s.responsibleName || '').toLowerCase().includes(lower) ||
         s.neighborhood?.toLowerCase().includes(lower)
       );
     }
@@ -739,6 +765,7 @@ export default function App() {
             onClose={() => setIsFormOpen(false)} 
             onSubmit={handleSaveSite}
             initialData={editingSite}
+            existingBuilders={uniqueBuilders}
           />
         )}
 
