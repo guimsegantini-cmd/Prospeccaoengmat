@@ -1,7 +1,8 @@
 
+
 import React, { useState } from 'react';
-import { ConstructionSite, Task, TaskType, REPRESENTATIONS, LeadStage } from '../types';
-import { MapPin, Phone, Mail, Clock, Calendar, ChevronDown, ChevronUp, Plus, Trash2, CheckCircle, Edit2, AlertTriangle, Navigation, MessageCircle } from 'lucide-react';
+import { ConstructionSite, Task, TaskType, REPRESENTATIONS, LeadStage, Contact } from '../types';
+import { MapPin, Phone, Mail, Clock, Calendar, ChevronDown, ChevronUp, Plus, Trash2, CheckCircle, Edit2, AlertTriangle, Navigation, MessageCircle, Users } from 'lucide-react';
 import { updateSite, deleteSite } from '../services/firebase';
 
 interface Props {
@@ -12,6 +13,23 @@ interface Props {
 const ConstructionCard: React.FC<Props> = ({ site, onEdit }) => {
     const [expanded, setExpanded] = useState(false);
     const [newTask, setNewTask] = useState<Partial<Task>>({ type: TaskType.CALL, description: '', notes: '', date: '', time: '' });
+
+    // Helper to get contacts list, compatible with legacy data
+    const getContacts = (): Contact[] => {
+        if (site.contacts && site.contacts.length > 0) return site.contacts;
+        if (site.responsibleName) {
+            return [{
+                name: site.responsibleName,
+                role: 'Responsável',
+                phone: site.phone || '',
+                email: site.email || ''
+            }];
+        }
+        return [];
+    };
+
+    const contacts = getContacts();
+    const primaryContact = contacts.length > 0 ? contacts[0] : null;
 
     const handleAddTask = async () => {
         if (!newTask.description || !newTask.date || !newTask.time) return;
@@ -96,12 +114,12 @@ const ConstructionCard: React.FC<Props> = ({ site, onEdit }) => {
         window.open(`https://waze.com/ul?q=${encodedAddress}&navigate=yes`, '_blank');
     };
 
-    const openWhatsApp = (e: React.MouseEvent) => {
+    const openWhatsApp = (e: React.MouseEvent, phoneNumber: string) => {
         e.stopPropagation();
-        if (!site.phone) return;
+        if (!phoneNumber) return;
         // Basic clean up: remove non-digits
-        const cleanPhone = site.phone.replace(/\D/g, '');
-        // Assume Brazil country code +55 if not present, though usually best to store E.164
+        const cleanPhone = phoneNumber.replace(/\D/g, '');
+        // Assume Brazil country code +55 if not present
         const fullPhone = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
         window.open(`https://wa.me/${fullPhone}`, '_blank');
     };
@@ -134,10 +152,12 @@ const ConstructionCard: React.FC<Props> = ({ site, onEdit }) => {
                         <MapPin size={14} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
                         <span>{site.neighborhood || 'Bairro N/A'}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 group" title="Abrir WhatsApp">
-                        <Phone size={14} className="text-slate-400 group-hover:text-green-500 transition-colors" />
-                        <span>{site.responsibleName}</span>
-                    </div>
+                    {primaryContact && (
+                        <div className="flex items-center gap-1.5 group" title={`Cargo: ${primaryContact.role}`}>
+                            <Phone size={14} className="text-slate-400 group-hover:text-green-500 transition-colors" />
+                            <span>{primaryContact.name.split(' ')[0]} ({primaryContact.role})</span>
+                        </div>
+                    )}
                 </div>
 
                 <div className="mt-3 flex justify-between items-center text-xs text-slate-400">
@@ -161,22 +181,44 @@ const ConstructionCard: React.FC<Props> = ({ site, onEdit }) => {
                         </div>
                     </div>
 
-                    {/* Contact Info */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-2 mb-4 text-sm">
-                         <div className="flex items-center gap-2">
-                            <span className="font-medium text-slate-600">Tel:</span> 
-                            <span className="text-slate-700">{site.phone}</span>
-                            <button onClick={openWhatsApp} className="ml-1 p-1 bg-green-100 text-green-600 rounded-full hover:bg-green-200 transition-colors" title="Abrir WhatsApp">
-                                <MessageCircle size={14} />
-                            </button>
-                         </div>
-                         
-                         <div className="text-slate-600"><span className="font-medium">Email:</span> {site.email}</div>
-                         
+                    {/* Contact Info (List) */}
+                    <div className="mb-4">
+                        <div className="flex items-center gap-2 mb-2">
+                             <Users size={14} className="text-slate-500"/>
+                             <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Contatos</h5>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                            {contacts.map((contact, idx) => (
+                                <div key={idx} className="bg-white p-2 rounded border border-slate-200 text-sm flex justify-between items-center">
+                                    <div>
+                                        <p className="font-medium text-slate-700">
+                                            {contact.name} <span className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded ml-1">{contact.role}</span>
+                                        </p>
+                                        <p className="text-xs text-slate-500">{contact.email}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-slate-600 text-xs">{contact.phone}</span>
+                                        {contact.phone && (
+                                            <button 
+                                                onClick={(e) => openWhatsApp(e, contact.phone)} 
+                                                className="p-1.5 bg-green-100 text-green-600 rounded-full hover:bg-green-200 transition-colors" 
+                                                title="WhatsApp"
+                                            >
+                                                <MessageCircle size={14} />
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    
+                    {/* Address & Profile */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-2 mb-4 text-sm bg-white p-3 rounded-lg border border-slate-200">
                          <div className="col-span-1 md:col-span-2 flex items-center gap-2">
                              <span className="font-medium text-slate-600">Endereço:</span> 
-                             <span className="text-slate-700 truncate">{site.address}</span>
-                             <button onClick={openWaze} className="ml-1 p-1 bg-blue-100 text-blue-500 rounded-full hover:bg-blue-200 transition-colors" title="Navegar com Waze">
+                             <span className="text-slate-700 truncate flex-1">{site.address}</span>
+                             <button onClick={openWaze} className="p-1 bg-blue-100 text-blue-500 rounded-full hover:bg-blue-200 transition-colors" title="Navegar com Waze">
                                 <Navigation size={14} />
                              </button>
                          </div>
