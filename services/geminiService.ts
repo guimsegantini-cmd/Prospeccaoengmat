@@ -9,6 +9,7 @@ export const askGeminiAboutSites = async (question: string, sites: ConstructionS
     const dataContext = JSON.stringify(sites.map(s => ({
         name: s.siteName,
         builder: s.builderName,
+        contacts: s.contacts ? s.contacts.map(c => `${c.name} (${c.role})`) : [s.responsibleName],
         phase: s.phase,
         neighborhood: s.neighborhood,
         profile: s.profile,
@@ -26,6 +27,7 @@ export const askGeminiAboutSites = async (question: string, sites: ConstructionS
       ${dataContext}
       
       Se a pergunta for sobre "bairro" ou "região", use o campo 'neighborhood'.
+      Se a pergunta for sobre pessoas ou contatos, liste os nomes e cargos disponíveis.
       Se não souber a resposta, diga que não encontrou informações nos dados fornecidos.
       Mantenha um tom profissional e motivador.
     `;
