@@ -43,7 +43,7 @@ export interface Task {
     id: string;
     siteId: string;
     description: string;
-    notes?: string; // Added field for task observations
+    notes?: string; 
     date: string; // YYYY-MM-DD
     time: string; // HH:mm
     type: TaskType;
@@ -51,21 +51,34 @@ export interface Task {
     createdAt: number;
 }
 
+export interface Contact {
+    name: string;
+    role: string; // Cargo (Engenheiro, Comprador, Mestre de Obras, etc.)
+    phone: string;
+    email: string;
+}
+
 export interface ConstructionSite {
     id: string;
     builderName: string;
     siteName: string;
-    responsibleName: string;
-    phone: string;
-    email: string;
+    
+    // New Structure for Multiple Contacts
+    contacts: Contact[];
+
+    // Deprecated fields (kept for backward compatibility during migration)
+    responsibleName?: string;
+    phone?: string;
+    email?: string;
+
     address: string;
-    neighborhood: string; // Added for Heatmap filtering logic
-    lat?: string; // Latitude (stored as string to avoid formatting issues in inputs, converted to number for map)
-    lng?: string; // Longitude
+    neighborhood: string; 
+    lat?: string; 
+    lng?: string; 
     phase: ConstructionPhase;
     profile: SiteProfile;
     leadStage: LeadStage;
-    connectedRepresentations: string[]; // List of connected brands
+    connectedRepresentations: string[]; 
     tasks: Task[];
     createdAt: number;
 }
