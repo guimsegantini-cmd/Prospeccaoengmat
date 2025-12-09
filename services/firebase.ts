@@ -21,14 +21,14 @@ import {
 import { ConstructionSite, Task } from '../types';
 
 // --- CONFIGURATION ---
-// REPLACE WITH YOUR REAL FIREBASE CONFIGURATION
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyD-EXAMPLE-KEY",
-  authDomain: "prospectobuild.firebaseapp.com",
-  projectId: "prospectobuild",
-  storageBucket: "prospectobuild.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef"
+  apiKey: "AIzaSyCPtfLsNBnFML4pJG6n5xgZ2aeiHoOCqQY",
+  authDomain: "prospeccaoengmat.firebaseapp.com",
+  projectId: "prospeccaoengmat",
+  storageBucket: "prospeccaoengmat.firebasestorage.app",
+  messagingSenderId: "189441352712",
+  appId: "1:189441352712:web:e2bcade74a4adfb0ccddbd",
+  measurementId: "G-8LH6J76EN8"
 };
 
 // Initialize Firebase
@@ -37,12 +37,10 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 // --- HELPER FOR DEMO MODE ---
-// Since the user might not have set up the backend immediately, we use a simple
-// in-memory store if Firebase keys are invalid or for this demo environment.
-// In a production app, remove 'isDemoMode' checks.
-let isDemoMode = true; 
+// Set to false to use real Firebase Auth
+let isDemoMode = false; 
 
-// Initial Mock Data
+// Initial Mock Data (Used only if isDemoMode is true)
 let mockSites: ConstructionSite[] = [
     {
         id: '1',
@@ -70,22 +68,6 @@ let mockSites: ConstructionSite[] = [
                 createdAt: Date.now()
             }
         ]
-    },
-    {
-        id: '2',
-        builderName: 'Engenharia Forte',
-        siteName: 'Edifício Titan',
-        responsibleName: 'Mariana Costa',
-        phone: '(11) 97777-6666',
-        email: 'mariana@forteng.com',
-        address: 'Rua das Flores, 500',
-        neighborhood: 'Pinheiros',
-        phase: 'Acabamento' as any,
-        profile: 'Luxo' as any,
-        leadStage: 'Proposta Enviada' as any,
-        connectedRepresentations: ['ALUMBRA', 'CONDEX'],
-        createdAt: Date.now() - 5000000,
-        tasks: []
     }
 ];
 
@@ -99,6 +81,8 @@ export const subscribeToSites = (callback: (sites: ConstructionSite[]) => void) 
     return onSnapshot(q, (snapshot) => {
         const sites = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ConstructionSite));
         callback(sites);
+    }, (error) => {
+        console.error("Erro ao buscar obras:", error);
     });
 };
 
@@ -106,7 +90,6 @@ export const addSite = async (site: Omit<ConstructionSite, 'id'>) => {
     if (isDemoMode) {
         const newSite = { ...site, id: Math.random().toString(36).substr(2, 9) };
         mockSites = [newSite, ...mockSites];
-        // Trigger generic update (in real app, use an event emitter or context)
         return;
     }
     await addDoc(collection(db, 'sites'), site);
@@ -132,13 +115,20 @@ export const deleteSite = async (siteId: string) => {
 
 export const login = async (email: string, password: string): Promise<User | {email: string} | null> => {
     if (isDemoMode) {
-        // Mock Login
         if (email === 'demo@app.com' && password === 'demo123') {
              return { email: 'demo@app.com' };
         }
         throw new Error('Credenciais inválidas. (Use demo@app.com / demo123)');
     }
     const result = await signInWithEmailAndPassword(auth, email, password);
+    return result.user;
+};
+
+export const register = async (email: string, password: string): Promise<User | null> => {
+    if (isDemoMode) {
+        throw new Error('O registro não está disponível no modo Demo.');
+    }
+    const result = await createUserWithEmailAndPassword(auth, email, password);
     return result.user;
 };
 
