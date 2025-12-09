@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   login, 
+  register,
   logout, 
   subscribeToSites, 
   addSite, 
@@ -29,15 +30,18 @@ import {
   MapPin,
   Download,
   Upload,
-  FileSpreadsheet
+  FileSpreadsheet,
+  UserPlus
 } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import * as XLSX from 'xlsx';
 
 // --- LOGIN COMPONENT ---
 const LoginScreen = ({ onLogin }: { onLogin: (u: any) => void }) => {
+  const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -45,11 +49,32 @@ const LoginScreen = ({ onLogin }: { onLogin: (u: any) => void }) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+
     try {
-      const user = await login(email, password);
-      onLogin(user);
+      if (isRegistering) {
+        if (password !== confirmPassword) {
+            throw new Error('As senhas não conferem.');
+        }
+        if (password.length < 6) {
+            throw new Error('A senha deve ter pelo menos 6 caracteres.');
+        }
+        const user = await register(email, password);
+        onLogin(user);
+      } else {
+        const user = await login(email, password);
+        onLogin(user);
+      }
     } catch (err: any) {
-      setError(err.message || 'Erro ao realizar login.');
+      // Firebase specific error mapping
+      if (err.code === 'auth/email-already-in-use') {
+          setError('Este e-mail já está cadastrado.');
+      } else if (err.code === 'auth/weak-password') {
+          setError('A senha é muito fraca.');
+      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+          setError('E-mail ou senha inválidos.');
+      } else {
+          setError(err.message || 'Ocorreu um erro.');
+      }
     } finally {
       setLoading(false);
     }
@@ -63,7 +88,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (u: any) => void }) => {
             <HardHat size={32} />
           </div>
           <h1 className="text-2xl font-bold text-slate-800">Prospecção Engmat</h1>
-          <p className="text-slate-500 mt-2">Acesso Restrito</p>
+          <p className="text-slate-500 mt-2">{isRegistering ? 'Crie sua conta' : 'Acesso Restrito'}</p>
         </div>
         
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -89,21 +114,45 @@ const LoginScreen = ({ onLogin }: { onLogin: (u: any) => void }) => {
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
+
+          {isRegistering && (
+            <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Confirmar Senha</label>
+                <input 
+                type="password" 
+                required
+                className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+            </div>
+          )}
           
           {error && <div className="text-red-500 text-sm bg-red-50 p-3 rounded-lg">{error}</div>}
           
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors shadow-lg shadow-blue-200 disabled:opacity-70"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors shadow-lg shadow-blue-200 disabled:opacity-70 flex items-center justify-center gap-2"
           >
-            {loading ? 'Entrando...' : 'Entrar no Sistema'}
+            {loading ? 'Processando...' : (isRegistering ? 'Cadastrar' : 'Entrar no Sistema')}
           </button>
-          
-          <div className="text-center text-xs text-slate-400 mt-4">
-            Modo Demo: Use demo@app.com / demo123
-          </div>
         </form>
+
+        <div className="mt-6 pt-6 border-t border-slate-100 text-center">
+            <button 
+                onClick={() => {
+                    setIsRegistering(!isRegistering);
+                    setError('');
+                    setPassword('');
+                    setConfirmPassword('');
+                }}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+            >
+                {isRegistering ? 'Já tem uma conta? Faça Login' : 'Não tem conta? Cadastre-se agora'}
+            </button>
+        </div>
       </div>
     </div>
   );
