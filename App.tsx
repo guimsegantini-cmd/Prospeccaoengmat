@@ -10,7 +10,7 @@ import {
   isDemoMode
 } from './services/firebase';
 import { askGeminiAboutSites } from './services/geminiService';
-import { ConstructionSite, Task, TaskType, LeadStage } from './types';
+import { ConstructionSite, Task, TaskType, LeadStage, ConstructionPhase } from './types';
 import ConstructionCard from './components/ConstructionCard';
 import ConstructionForm from './components/ConstructionForm';
 import DashboardTab from './components/DashboardTab';
@@ -174,6 +174,8 @@ export default function App() {
   const [sortOrder, setSortOrder] = useState<'date_desc' | 'date_asc' | 'alpha'>('date_desc');
   const [showOverdueOnly, setShowOverdueOnly] = useState(false);
   const [taskDateFilter, setTaskDateFilter] = useState('');
+  const [taskTypeFilter, setTaskTypeFilter] = useState<TaskType | ''>(''); // New Task Type Filter
+  const [phaseFilter, setPhaseFilter] = useState<ConstructionPhase | ''>(''); // New Phase Filter
 
   // AI States
   const [aiPrompt, setAiPrompt] = useState('');
@@ -417,6 +419,10 @@ export default function App() {
       result = result.filter(s => s.tasks.some(t => !t.completed && new Date(`${t.date}T${t.time}`).getTime() < now));
     }
 
+    if (phaseFilter) {
+      result = result.filter(s => s.phase === phaseFilter);
+    }
+
     if (sortOrder === 'alpha') {
       result.sort((a, b) => a.siteName.localeCompare(b.siteName));
     } else if (sortOrder === 'date_desc') {
@@ -426,24 +432,28 @@ export default function App() {
     }
 
     return result;
-  }, [sites, searchTerm, sortOrder, showOverdueOnly]);
+  }, [sites, searchTerm, sortOrder, showOverdueOnly, phaseFilter]);
 
   const allTasks = useMemo(() => {
-    const tasks = sites.flatMap(s => s.tasks.map(t => ({ ...t, site: s })));
+    let tasks = sites.flatMap(s => s.tasks.map(t => ({ ...t, site: s })));
     
     // Filter by Date if selected
     if (taskDateFilter) {
-      return tasks.filter(t => t.date === taskDateFilter)
-                  .sort((a, b) => a.time.localeCompare(b.time));
+      tasks = tasks.filter(t => t.date === taskDateFilter);
     }
     
-    // Otherwise sort by Date then Time
+    // Filter by Task Type
+    if (taskTypeFilter) {
+      tasks = tasks.filter(t => t.type === taskTypeFilter);
+    }
+    
+    // Sort by Date then Time
     return tasks.sort((a, b) => {
       const dateA = new Date(`${a.date}T${a.time}`).getTime();
       const dateB = new Date(`${b.date}T${b.time}`).getTime();
       return dateA - dateB;
     });
-  }, [sites, taskDateFilter]);
+  }, [sites, taskDateFilter, taskTypeFilter]);
 
   // Derived user state to safely handle both Demo Mode and Real Firebase Auth
   const currentUser = user || auth.currentUser;
@@ -556,6 +566,25 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Phase Filter Bar */}
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+                  <button 
+                    onClick={() => setPhaseFilter('')}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors border ${!phaseFilter ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                  >
+                    Todas
+                  </button>
+                  {Object.values(ConstructionPhase).map(phase => (
+                    <button 
+                        key={phase}
+                        onClick={() => setPhaseFilter(phase === phaseFilter ? '' : phase)}
+                        className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors border ${phaseFilter === phase ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                    >
+                        {phase}
+                    </button>
+                  ))}
+              </div>
+
               {/* Filters Toolbar */}
               <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4 items-center">
                 <div className="relative flex-1 w-full">
@@ -607,19 +636,35 @@ export default function App() {
           {/* TAB: TASKS */}
           {activeTab === 'tasks' && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h1 className="text-2xl font-bold text-slate-800">Agenda de Tarefas</h1>
-                <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-slate-200">
-                  <Filter size={18} className="text-slate-400" />
-                  <input 
-                    type="date" 
-                    className="outline-none text-slate-600 text-sm"
-                    value={taskDateFilter}
-                    onChange={(e) => setTaskDateFilter(e.target.value)}
-                  />
-                  {taskDateFilter && (
-                    <button onClick={() => setTaskDateFilter('')} className="text-xs text-blue-600 hover:underline">Limpar</button>
-                  )}
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-slate-200">
+                        <Filter size={18} className="text-slate-400" />
+                        <select 
+                            className="bg-transparent text-sm text-slate-600 outline-none"
+                            value={taskTypeFilter}
+                            onChange={(e) => setTaskTypeFilter(e.target.value as TaskType)}
+                        >
+                            <option value="">Todos os Tipos</option>
+                            {Object.values(TaskType).map(t => (
+                                <option key={t} value={t}>{t}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-slate-200">
+                        <Calendar size={18} className="text-slate-400" />
+                        <input 
+                            type="date" 
+                            className="outline-none text-slate-600 text-sm"
+                            value={taskDateFilter}
+                            onChange={(e) => setTaskDateFilter(e.target.value)}
+                        />
+                        {taskDateFilter && (
+                            <button onClick={() => setTaskDateFilter('')} className="text-xs text-blue-600 hover:underline">Limpar</button>
+                        )}
+                    </div>
                 </div>
               </div>
 
@@ -680,7 +725,7 @@ export default function App() {
                 ) : (
                   <div className="p-12 text-center text-slate-400">
                     <CheckSquare size={48} className="mx-auto mb-4 opacity-20" />
-                    <p>Nenhuma tarefa encontrada para este período.</p>
+                    <p>Nenhuma tarefa encontrada para este período ou tipo.</p>
                   </div>
                 )}
               </div>
