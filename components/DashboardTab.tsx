@@ -1,34 +1,24 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ConstructionSite, LeadStage } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as L from 'leaflet';
+import { MapPin } from 'lucide-react';
 
 interface Props {
     sites: ConstructionSite[];
 }
 
-// Pseudo-geocoding for demo purposes (approximating Neighborhoods in São Paulo)
-// In a real app, use the Google Maps Geocoding API.
-const getApproximateCoords = (neighborhood: string, fallbackLat = -23.550520, fallbackLng = -46.633308) => {
-    // Generate a deterministic pseudo-random offset based on neighborhood name string
-    let hash = 0;
-    for (let i = 0; i < neighborhood.length; i++) {
-        hash = neighborhood.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    
-    // Create an offset of roughly +/- 0.05 degrees (~5km)
-    const latOffset = ((hash % 1000) - 500) / 10000; 
-    const lngOffset = (((hash >> 2) % 1000) - 500) / 10000;
-
-    return {
-        lat: fallbackLat + latOffset,
-        lng: fallbackLng + lngOffset
-    };
-};
+interface SiteLocation {
+    lat: number;
+    lng: number;
+    site: ConstructionSite;
+}
 
 const DashboardTab: React.FC<Props> = ({ sites }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstance = useRef<L.Map | null>(null);
+    const [locations, setLocations] = useState<SiteLocation[]>([]);
+    const [loadingMap, setLoadingMap] = useState(false);
 
     // 1. Funnel by Lead Stage
     const funnelData = Object.values(LeadStage).map(stage => ({
@@ -46,56 +36,121 @@ const DashboardTab: React.FC<Props> = ({ sites }) => {
 
     const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6366f1', '#ec4899'];
 
-    // 3. Initialize Map
+    // 3. Geocoding Logic
+    useEffect(() => {
+        let isMounted = true;
+        const processSites = async () => {
+            setLoadingMap(true);
+            const resolvedLocations: SiteLocation[] = [];
+
+            // We need to fetch coordinates for sites that don't have them explicitly set
+            // We use OpenStreetMap Nominatim API (Free, requires user agent)
+            // Note: In a real heavy-use app, you should cache these in the backend.
+            
+            for (const site of sites) {
+                if (!isMounted) break;
+
+                // Case A: Lat/Lng exists in DB
+                if (site.lat && site.lng) {
+                    const lat = parseFloat(site.lat);
+                    const lng = parseFloat(site.lng);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        resolvedLocations.push({ lat, lng, site });
+                        continue;
+                    }
+                }
+
+                // Case B: Geocode via Address
+                // To be polite to the API, we only fetch if we have an address and we add a small delay
+                if (site.address) {
+                    try {
+                        const query = `${site.address}, ${site.neighborhood || ''}`;
+                        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+                        
+                        // Simple throttle/delay
+                        await new Promise(r => setTimeout(r, 800)); 
+
+                        const res = await fetch(url, { headers: { 'User-Agent': 'ProspeccaoEngmat/1.0' } });
+                        const data = await res.json();
+
+                        if (data && data.length > 0) {
+                            resolvedLocations.push({
+                                lat: parseFloat(data[0].lat),
+                                lng: parseFloat(data[0].lon),
+                                site
+                            });
+                        }
+                    } catch (e) {
+                        console.warn("Geocoding failed for", site.siteName, e);
+                    }
+                }
+            }
+
+            if (isMounted) {
+                setLocations(resolvedLocations);
+                setLoadingMap(false);
+            }
+        };
+
+        processSites();
+
+        return () => { isMounted = false; };
+    }, [sites]);
+
+    // 4. Map Rendering
     useEffect(() => {
         if (!mapRef.current) return;
 
-        // Clean up existing map if strict mode renders twice
+        // Clean up existing map
         if (mapInstance.current) {
             mapInstance.current.remove();
+            mapInstance.current = null;
         }
 
-        // Initialize Map
-        const map = L.map(mapRef.current).setView([-23.550520, -46.633308], 11); // Start centered on São Paulo
+        // Default Center (São Paulo) if no locations
+        const initialCenter: [number, number] = locations.length > 0 
+            ? [locations[0].lat, locations[0].lng] 
+            : [-23.550520, -46.633308];
+
+        const map = L.map(mapRef.current).setView(initialCenter, 12);
         mapInstance.current = map;
 
-        // Add OpenStreetMap Tiles
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
         // Add Markers
-        sites.forEach(site => {
-            let lat: number, lng: number;
+        const markers = L.featureGroup();
 
-            // Use provided coords or fallback to pseudo-geocoding based on neighborhood
-            if (site.lat && site.lng) {
-                lat = parseFloat(site.lat);
-                lng = parseFloat(site.lng);
-            } else {
-                const coords = getApproximateCoords(site.neighborhood || 'Desconhecido');
-                lat = coords.lat;
-                lng = coords.lng;
-            }
-
-            // Create a Circle Marker (better for density visualization)
-            const color = site.leadStage === LeadStage.INACTIVE ? '#94a3b8' : '#3b82f6';
+        locations.forEach(loc => {
+            const color = loc.site.leadStage === LeadStage.INACTIVE ? '#94a3b8' : '#3b82f6';
             
-            L.circleMarker([lat, lng], {
+            const marker = L.circleMarker([loc.lat, loc.lng], {
                 radius: 8,
                 fillColor: color,
                 color: '#fff',
-                weight: 1,
+                weight: 2,
                 opacity: 1,
-                fillOpacity: 0.8
+                fillOpacity: 0.9
             })
-            .addTo(map)
             .bindPopup(`
-                <b>${site.siteName}</b><br/>
-                ${site.neighborhood}<br/>
-                Status: ${site.leadStage}
+                <div style="font-family: sans-serif;">
+                    <strong style="font-size: 14px; color: #1e293b;">${loc.site.siteName}</strong><br/>
+                    <span style="font-size: 12px; color: #64748b;">${loc.site.builderName}</span><br/>
+                    <span style="font-size: 11px; color: #64748b;">${loc.site.address}</span><br/>
+                    <span style="display:inline-block; margin-top:4px; padding: 2px 6px; background: #e2e8f0; border-radius: 4px; font-size: 10px; font-weight: bold;">
+                        ${loc.site.phase}
+                    </span>
+                </div>
             `);
+            
+            marker.addTo(map);
+            markers.addLayer(marker);
         });
+
+        if (locations.length > 0) {
+            map.fitBounds(markers.getBounds(), { padding: [50, 50] });
+        }
 
         return () => {
             if (mapInstance.current) {
@@ -103,7 +158,7 @@ const DashboardTab: React.FC<Props> = ({ sites }) => {
                 mapInstance.current = null;
             }
         };
-    }, [sites]);
+    }, [locations]);
 
     return (
         <div className="space-y-6">
@@ -151,11 +206,20 @@ const DashboardTab: React.FC<Props> = ({ sites }) => {
                     </ResponsiveContainer>
                 </div>
 
-                {/* Real Density Map using Leaflet */}
+                {/* Real Map */}
                 <div className="bg-white p-0 rounded-xl shadow-sm border border-slate-200 h-96 overflow-hidden flex flex-col">
-                    <div className="p-4 border-b border-slate-100 bg-white z-10 relative">
-                        <h3 className="text-lg font-bold text-slate-800">Mapa de Densidade (Geográfico)</h3>
-                        <p className="text-xs text-slate-500">Exibindo localização aproximada por bairro ou coordenadas exatas.</p>
+                    <div className="p-4 border-b border-slate-100 bg-white z-10 relative flex justify-between items-center">
+                        <div>
+                            <h3 className="text-lg font-bold text-slate-800">Mapa de Obras</h3>
+                            <p className="text-xs text-slate-500">
+                                {loadingMap 
+                                    ? "Buscando coordenadas dos endereços..." 
+                                    : "Localização baseada no endereço cadastrado."}
+                            </p>
+                        </div>
+                        {loadingMap && (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                        )}
                     </div>
                     <div id="map" ref={mapRef} className="flex-1 bg-slate-100 z-0 relative" style={{ minHeight: '300px' }}></div>
                 </div>
