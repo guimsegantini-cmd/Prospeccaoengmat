@@ -7,13 +7,15 @@ import {
   addSite, 
   updateSite, 
   auth,
-  isDemoMode
+  isDemoMode,
+  onAuthStateChanged
 } from './services/firebase';
 import { askGeminiAboutSites } from './services/geminiService';
 import { ConstructionSite, Task, TaskType, LeadStage, ConstructionPhase } from './types';
 import ConstructionCard from './components/ConstructionCard';
 import ConstructionForm from './components/ConstructionForm';
 import DashboardTab from './components/DashboardTab';
+import TaskEditModal from './components/TaskEditModal';
 import { 
   LayoutDashboard, 
   HardHat, 
@@ -31,9 +33,9 @@ import {
   Download,
   Upload,
   FileSpreadsheet,
-  UserPlus
+  UserPlus,
+  Edit2
 } from 'lucide-react';
-import { onAuthStateChanged } from 'firebase/auth';
 import * as XLSX from 'xlsx';
 
 // --- LOGIN COMPONENT ---
@@ -169,6 +171,9 @@ export default function App() {
   const [editingSite, setEditingSite] = useState<ConstructionSite | undefined>(undefined);
   const [isAiOpen, setIsAiOpen] = useState(false);
 
+  // Task Editing State
+  const [editingTaskData, setEditingTaskData] = useState<{task: Task, siteId: string} | null>(null);
+
   // Filter States
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<'date_desc' | 'date_asc' | 'alpha'>('date_desc');
@@ -188,10 +193,7 @@ export default function App() {
   // Auth Effect
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
-      // In Demo Mode, we handle auth state manually via LoginScreen and setUser.
-      // We ignore firebase updates to prevent it from clearing our demo user state.
-      if (isDemoMode) return; 
-      
+      // Logic simplified for Mock Mode: always update user if changed
       if (u) setUser(u);
       else setUser(null);
     });
@@ -248,6 +250,18 @@ export default function App() {
     if (!site) return;
     const updatedTasks = site.tasks.map(t => t.id === taskId ? { ...t, completed: !currentStatus } : t);
     await updateSite(siteId, { tasks: updatedTasks });
+  };
+
+  const handleTaskUpdateSave = async (updates: Partial<Task>) => {
+    if (!editingTaskData) return;
+    const { task, siteId } = editingTaskData;
+    
+    const site = sites.find(s => s.id === siteId);
+    if (!site) return;
+
+    const updatedTasks = site.tasks.map(t => t.id === task.id ? { ...t, ...updates } : t);
+    await updateSite(siteId, { tasks: updatedTasks });
+    setEditingTaskData(null);
   };
 
   // --- IMPORT / EXPORT HANDLERS (EXCEL) ---
@@ -673,6 +687,10 @@ export default function App() {
                   <div className="divide-y divide-slate-100">
                     {allTasks.map(task => {
                       const isOverdue = !task.completed && new Date(`${task.date}T${task.time}`).getTime() < Date.now();
+                      
+                      // Separate site data from task data for modal
+                      const { site, ...cleanTask } = task;
+
                       return (
                         <div key={`${task.site.id}-${task.id}`} className={`p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors ${task.completed ? 'opacity-60 bg-slate-50' : ''}`}>
                           <button 
@@ -704,18 +722,29 @@ export default function App() {
                             </p>
                           </div>
 
-                          <div className="text-right shrink-0">
-                            <div className="flex items-center gap-1 justify-end text-slate-700 font-medium">
-                              <Clock size={14} className="text-slate-400" />
-                              {task.time}
-                            </div>
-                            <div className="flex items-center gap-1 justify-end text-xs text-slate-500 mt-1">
-                              <Calendar size={12} />
-                              {new Date(task.date).toLocaleDateString()}
-                            </div>
+                          <div className="flex items-center gap-2">
+                              {/* Edit/Postpone Button */}
+                              <button 
+                                onClick={() => setEditingTaskData({ task: cleanTask, siteId: site.id })}
+                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                                title="Editar ou Adiar"
+                              >
+                                <Edit2 size={16} />
+                              </button>
+
+                              <div className="text-right shrink-0">
+                                <div className="flex items-center gap-1 justify-end text-slate-700 font-medium">
+                                  <Clock size={14} className="text-slate-400" />
+                                  {task.time}
+                                </div>
+                                <div className="flex items-center gap-1 justify-end text-xs text-slate-500 mt-1">
+                                  <Calendar size={12} />
+                                  {new Date(task.date).toLocaleDateString()}
+                                </div>
+                              </div>
                           </div>
                           
-                          <div className="shrink-0 text-xs text-slate-400 font-medium px-2 py-1 bg-slate-100 rounded">
+                          <div className="shrink-0 text-xs text-slate-400 font-medium px-2 py-1 bg-slate-100 rounded hidden sm:block">
                              {task.site.neighborhood || 'S/ Bairro'}
                           </div>
                         </div>
@@ -740,6 +769,15 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* TASK EDIT MODAL */}
+        {editingTaskData && (
+            <TaskEditModal 
+                task={editingTaskData.task} 
+                onClose={() => setEditingTaskData(null)} 
+                onSave={handleTaskUpdateSave} 
+            />
+        )}
 
         {/* AI FLOATING BUTTON */}
         <button 
@@ -813,6 +851,11 @@ export default function App() {
             existingBuilders={uniqueBuilders}
           />
         )}
+
+      </main>
+    </div>
+  );
+}
 
       </main>
     </div>
