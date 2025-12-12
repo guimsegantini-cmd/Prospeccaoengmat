@@ -7,7 +7,6 @@ export interface User {
 }
 
 // --- HELPER FOR DEMO MODE ---
-// Forced to true since we are mocking the backend
 export const isDemoMode = true; 
 
 // Mock Objects
@@ -70,6 +69,7 @@ export const onAuthStateChanged = (authObj: any, callback: (user: User | null) =
     } else {
         callback(null);
     }
+    // Return unsubscribe function
     return () => {};
 };
 
