@@ -1,21 +1,46 @@
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  updateDoc, 
+  doc, 
+  onSnapshot, 
+  query, 
+  orderBy,
+  deleteDoc
+} from 'firebase/firestore';
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  User 
+} from 'firebase/auth';
 import { ConstructionSite, Task } from '../types';
 
-// Mock User Interface
-export interface User {
-    uid: string;
-    email: string | null;
-}
-
-// --- HELPER FOR DEMO MODE ---
-export const isDemoMode = true; 
-
-// Mock Objects
-export const db = {};
-export const auth = {
-    currentUser: null as User | null
+// --- CONFIGURATION ---
+const firebaseConfig = {
+  apiKey: "AIzaSyCPtfLsNBnFML4pJG6n5xgZ2aeiHoOCqQY",
+  authDomain: "prospeccaoengmat.firebaseapp.com",
+  projectId: "prospeccaoengmat",
+  storageBucket: "prospeccaoengmat.firebasestorage.app",
+  messagingSenderId: "189441352712",
+  appId: "1:189441352712:web:e2bcade74a4adfb0ccddbd",
+  measurementId: "G-8LH6J76EN8"
 };
 
-// Initial Mock Data
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+// --- HELPER FOR DEMO MODE ---
+// Set to false to use real Firebase Auth
+let isDemoMode = false; 
+
+// Initial Mock Data (Used only if isDemoMode is true)
 let mockSites: ConstructionSite[] = [
     {
         id: '1',
@@ -54,66 +79,70 @@ let mockSites: ConstructionSite[] = [
     }
 ];
 
-// Mock onAuthStateChanged
-export const onAuthStateChanged = (authObj: any, callback: (user: User | null) => void) => {
-    // Check local storage for persisted demo session
-    const storedUser = localStorage.getItem('demo_user');
-    if (storedUser) {
-        try {
-            const user = JSON.parse(storedUser);
-            auth.currentUser = user;
-            callback(user);
-        } catch (e) {
-            callback(null);
-        }
-    } else {
-        callback(null);
-    }
-    // Return unsubscribe function
-    return () => {};
-};
-
 export const subscribeToSites = (callback: (sites: ConstructionSite[]) => void) => {
-    // Simulate network delay
-    setTimeout(() => {
+    if (isDemoMode) {
         callback([...mockSites]);
-    }, 300);
-    return () => {};
+        return () => {};
+    }
+    
+    const q = query(collection(db, 'sites'), orderBy('createdAt', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+        const sites = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ConstructionSite));
+        callback(sites);
+    }, (error) => {
+        console.error("Erro ao buscar obras:", error);
+    });
 };
 
 export const addSite = async (site: Omit<ConstructionSite, 'id'>) => {
-    const newSite = { ...site, id: Math.random().toString(36).substr(2, 9) };
-    mockSites = [newSite, ...mockSites];
-    return;
+    if (isDemoMode) {
+        const newSite = { ...site, id: Math.random().toString(36).substr(2, 9) };
+        mockSites = [newSite, ...mockSites];
+        return;
+    }
+    await addDoc(collection(db, 'sites'), site);
 };
 
 export const updateSite = async (siteId: string, data: Partial<ConstructionSite>) => {
-    mockSites = mockSites.map(s => s.id === siteId ? { ...s, ...data } : s);
-    return;
+    if (isDemoMode) {
+        mockSites = mockSites.map(s => s.id === siteId ? { ...s, ...data } : s);
+        return;
+    }
+    await updateDoc(doc(db, 'sites', siteId), data);
 };
 
 export const deleteSite = async (siteId: string) => {
-    mockSites = mockSites.filter(s => s.id !== siteId);
-    return;
+    if (isDemoMode) {
+        mockSites = mockSites.filter(s => s.id !== siteId);
+        return;
+    }
+    await deleteDoc(doc(db, 'sites', siteId));
 };
 
 // --- AUTH SERVICES ---
 
-export const login = async (email: string, password: string): Promise<User | null> => {
-    if (email === 'demo@app.com' && password === 'demo123') {
-         const user = { email: 'demo@app.com', uid: 'demo-123' };
-         localStorage.setItem('demo_user', JSON.stringify(user));
-         auth.currentUser = user;
-         return user;
+export const login = async (email: string, password: string): Promise<User | {email: string} | null> => {
+    if (isDemoMode) {
+        if (email === 'demo@app.com' && password === 'demo123') {
+             return { email: 'demo@app.com' };
+        }
+        throw new Error('Credenciais inválidas. (Use demo@app.com / demo123)');
     }
-    throw new Error('Credenciais inválidas. (Use demo@app.com / demo123)');
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    return result.user;
 };
 
 export const register = async (email: string, password: string): Promise<User | null> => {
-    throw new Error('O registro não está disponível no modo Demo.');
+    if (isDemoMode) {
+        throw new Error('O registro não está disponível no modo Demo.');
+    }
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    return result.user;
 };
 
 export const logout = async () => {
-    localStorage.removeItem('demo_user');
-    auth.currentUser = null;
+    if (isDemoMode) return;
+    await signOut(auth);
 };
+
+export { auth, db, isDemoMode };
