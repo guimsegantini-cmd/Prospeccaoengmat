@@ -1,8 +1,8 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { ConstructionSite, LeadStage } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as L from 'leaflet';
-import { MapPin } from 'lucide-react';
 
 interface Props {
     sites: ConstructionSite[];
@@ -17,6 +17,7 @@ interface SiteLocation {
 const DashboardTab: React.FC<Props> = ({ sites }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstance = useRef<L.Map | null>(null);
+    const layerGroupRef = useRef<L.LayerGroup | null>(null);
     const [locations, setLocations] = useState<SiteLocation[]>([]);
     const [loadingMap, setLoadingMap] = useState(false);
 
@@ -42,15 +43,10 @@ const DashboardTab: React.FC<Props> = ({ sites }) => {
         const processSites = async () => {
             setLoadingMap(true);
             const resolvedLocations: SiteLocation[] = [];
-
-            // We need to fetch coordinates for sites that don't have them explicitly set
-            // We use OpenStreetMap Nominatim API (Free, requires user agent)
-            // Note: In a real heavy-use app, you should cache these in the backend.
             
             for (const site of sites) {
                 if (!isMounted) break;
 
-                // Case A: Lat/Lng exists in DB
                 if (site.lat && site.lng) {
                     const lat = parseFloat(site.lat);
                     const lng = parseFloat(site.lng);
@@ -60,14 +56,10 @@ const DashboardTab: React.FC<Props> = ({ sites }) => {
                     }
                 }
 
-                // Case B: Geocode via Address
-                // To be polite to the API, we only fetch if we have an address and we add a small delay
                 if (site.address) {
                     try {
                         const query = `${site.address}, ${site.neighborhood || ''}`;
                         const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
-                        
-                        // Simple throttle/delay
                         await new Promise(r => setTimeout(r, 800)); 
 
                         const res = await fetch(url, { headers: { 'User-Agent': 'ProspeccaoEngmat/1.0' } });
@@ -93,39 +85,51 @@ const DashboardTab: React.FC<Props> = ({ sites }) => {
         };
 
         processSites();
-
         return () => { isMounted = false; };
     }, [sites]);
 
-    // 4. Map Rendering
+    // 4. Map Initialization (Run once)
     useEffect(() => {
-        if (!mapRef.current) return;
+        if (!mapRef.current || mapInstance.current) return;
 
-        // Clean up existing map
-        if (mapInstance.current) {
-            mapInstance.current.remove();
-            mapInstance.current = null;
-        }
-
-        // Default Center (São Paulo) if no locations
-        const initialCenter: [number, number] = locations.length > 0 
-            ? [locations[0].lat, locations[0].lng] 
-            : [-23.550520, -46.633308];
-
-        const map = L.map(mapRef.current).setView(initialCenter, 12);
+        const map = L.map(mapRef.current).setView([-23.550520, -46.633308], 12);
         mapInstance.current = map;
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
-        // Add Markers
-        const markers = L.featureGroup();
+        const layerGroup = L.layerGroup().addTo(map);
+        layerGroupRef.current = layerGroup;
+
+        return () => {
+            if (mapInstance.current) {
+                mapInstance.current.remove();
+                mapInstance.current = null;
+                layerGroupRef.current = null;
+            }
+        };
+    }, []);
+
+    // 5. Markers Update (Run when locations change)
+    useEffect(() => {
+        if (!mapInstance.current || !layerGroupRef.current) return;
+
+        const map = mapInstance.current;
+        const layerGroup = layerGroupRef.current;
+
+        // Clear existing markers safely
+        layerGroup.clearLayers();
+
+        if (locations.length === 0) return;
+
+        const bounds = L.latLngBounds([]);
 
         locations.forEach(loc => {
             const color = loc.site.leadStage === LeadStage.INACTIVE ? '#94a3b8' : '#3b82f6';
+            const latLng: L.LatLngExpression = [loc.lat, loc.lng];
             
-            const marker = L.circleMarker([loc.lat, loc.lng], {
+            const marker = L.circleMarker(latLng, {
                 radius: 8,
                 fillColor: color,
                 color: '#fff',
@@ -134,30 +138,28 @@ const DashboardTab: React.FC<Props> = ({ sites }) => {
                 fillOpacity: 0.9
             })
             .bindPopup(`
-                <div style="font-family: sans-serif;">
-                    <strong style="font-size: 14px; color: #1e293b;">${loc.site.siteName}</strong><br/>
-                    <span style="font-size: 12px; color: #64748b;">${loc.site.builderName}</span><br/>
-                    <span style="font-size: 11px; color: #64748b;">${loc.site.address}</span><br/>
-                    <span style="display:inline-block; margin-top:4px; padding: 2px 6px; background: #e2e8f0; border-radius: 4px; font-size: 10px; font-weight: bold;">
+                <div style="font-family: sans-serif; min-width: 150px;">
+                    <strong style="font-size: 14px; color: #1e293b; display: block; margin-bottom: 2px;">${loc.site.siteName}</strong>
+                    <span style="font-size: 12px; color: #64748b; display: block;">${loc.site.builderName}</span>
+                    <span style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 6px;">${loc.site.address}</span>
+                    <div style="display:inline-block; padding: 2px 6px; background: #e2e8f0; border-radius: 4px; font-size: 10px; font-weight: bold; color: #475569;">
                         ${loc.site.phase}
-                    </span>
+                    </div>
                 </div>
             `);
             
-            marker.addTo(map);
-            markers.addLayer(marker);
+            marker.addTo(layerGroup);
+            bounds.extend(latLng);
         });
 
-        if (locations.length > 0) {
-            map.fitBounds(markers.getBounds(), { padding: [50, 50] });
-        }
-
-        return () => {
-            if (mapInstance.current) {
-                mapInstance.current.remove();
-                mapInstance.current = null;
+        // Use timeout to prevent race conditions during animation if many updates happen
+        const timeoutId = setTimeout(() => {
+            if (mapInstance.current && bounds.isValid()) {
+                mapInstance.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
             }
-        };
+        }, 100);
+
+        return () => clearTimeout(timeoutId);
     }, [locations]);
 
     return (
