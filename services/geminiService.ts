@@ -1,9 +1,14 @@
-import { GoogleGenAI } from "@google/genai";
+
+import { GoogleGenAI, type GenerateContentResponse } from "@google/genai";
 import { ConstructionSite } from "../types";
 
-// NOTE: In a production environment, never expose keys on the client side without restrictions.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Always initialize with apiKey property and use process.env.API_KEY directly.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+/**
+ * Uses Gemini AI to analyze construction site data and provide insights.
+ * Utilizes 'gemini-3-flash-preview' for basic text and summarization tasks.
+ */
 export const askGeminiAboutSites = async (question: string, sites: ConstructionSite[]): Promise<string> => {
   try {
     const dataContext = JSON.stringify(sites.map(s => ({
@@ -32,15 +37,18 @@ export const askGeminiAboutSites = async (question: string, sites: ConstructionS
       Mantenha um tom profissional e motivador.
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+    // Use ai.models.generateContent with model name and prompt as per guidelines.
+    // Basic text tasks use 'gemini-3-flash-preview'.
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
       contents: question,
       config: {
         systemInstruction: systemInstruction,
-        temperature: 0.3, // Low temperature for more factual answers
+        temperature: 0.3,
       }
     });
 
+    // Access the text property directly on the response object (not as a method).
     return response.text || "Não consegui gerar uma resposta no momento.";
   } catch (error) {
     console.error("Gemini Error:", error);
