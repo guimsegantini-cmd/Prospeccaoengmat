@@ -1,24 +1,27 @@
-import { initializeApp } from 'firebase/app';
+
+// Use standard modular imports for Firebase v9+
+import { initializeApp, getApp, getApps } from 'firebase/app';
 import { 
   getFirestore, 
   collection, 
+  query, 
+  orderBy, 
+  onSnapshot, 
   addDoc, 
   updateDoc, 
-  doc, 
-  onSnapshot, 
-  query, 
-  orderBy,
-  deleteDoc
+  deleteDoc, 
+  doc 
 } from 'firebase/firestore';
 import { 
   getAuth, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
-  signOut, 
-  onAuthStateChanged,
-  User 
+  signOut,
+  onAuthStateChanged
 } from 'firebase/auth';
-import { ConstructionSite, Task } from '../types';
+// Import User as a type to resolve "no exported member" error when mixed with values
+import type { User } from 'firebase/auth';
+import { ConstructionSite, ConstructionPhase, SiteProfile, LeadStage } from '../types';
 
 // --- CONFIGURATION ---
 const firebaseConfig = {
@@ -31,16 +34,22 @@ const firebaseConfig = {
   measurementId: "G-8LH6J76EN8"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
+// Initialize Firebase using modular SDK exports.
+// Ensure we don't re-initialize if the app already exists.
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+
+// Initialize Firestore and Auth using the modular pattern.
+export const db = getFirestore(app);
+export const auth = getAuth(app);
+
+// Re-export onAuthStateChanged to resolve module resolution issues in App.tsx.
+export { onAuthStateChanged };
 
 // --- HELPER FOR DEMO MODE ---
-// Set to false to use real Firebase Auth
-let isDemoMode = false; 
+export const isDemoMode = false; 
 
 // Initial Mock Data (Used only if isDemoMode is true)
+// Updated to use proper enum values instead of casted strings.
 let mockSites: ConstructionSite[] = [
     {
         id: '1',
@@ -51,9 +60,9 @@ let mockSites: ConstructionSite[] = [
         email: 'carlos@horizonte.com',
         address: 'Av. Paulista, 1000',
         neighborhood: 'Bela Vista',
-        phase: 'Estrutura' as any,
-        profile: 'Alto Padrão' as any,
-        leadStage: 'Em Negociação' as any,
+        phase: ConstructionPhase.STRUCTURE,
+        profile: SiteProfile.HIGH_END,
+        leadStage: LeadStage.CONTACT,
         connectedRepresentations: ['ROCA SANITÁRIOS', 'DM2'],
         contacts: [
             {
@@ -85,7 +94,9 @@ export const subscribeToSites = (callback: (sites: ConstructionSite[]) => void) 
         return () => {};
     }
     
-    const q = query(collection(db, 'sites'), orderBy('createdAt', 'desc'));
+    const sitesCollection = collection(db, 'sites');
+    const q = query(sitesCollection, orderBy('createdAt', 'desc'));
+    
     return onSnapshot(q, (snapshot) => {
         const sites = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ConstructionSite));
         callback(sites);
@@ -108,7 +119,8 @@ export const updateSite = async (siteId: string, data: Partial<ConstructionSite>
         mockSites = mockSites.map(s => s.id === siteId ? { ...s, ...data } : s);
         return;
     }
-    await updateDoc(doc(db, 'sites', siteId), data);
+    const siteRef = doc(db, 'sites', siteId);
+    await updateDoc(siteRef, data);
 };
 
 export const deleteSite = async (siteId: string) => {
@@ -116,7 +128,8 @@ export const deleteSite = async (siteId: string) => {
         mockSites = mockSites.filter(s => s.id !== siteId);
         return;
     }
-    await deleteDoc(doc(db, 'sites', siteId));
+    const siteRef = doc(db, 'sites', siteId);
+    await deleteDoc(siteRef);
 };
 
 // --- AUTH SERVICES ---
@@ -124,7 +137,7 @@ export const deleteSite = async (siteId: string) => {
 export const login = async (email: string, password: string): Promise<User | {email: string} | null> => {
     if (isDemoMode) {
         if (email === 'demo@app.com' && password === 'demo123') {
-             return { email: 'demo@app.com' };
+             return { email: 'demo@app.com' } as any;
         }
         throw new Error('Credenciais inválidas. (Use demo@app.com / demo123)');
     }
@@ -144,5 +157,3 @@ export const logout = async () => {
     if (isDemoMode) return;
     await signOut(auth);
 };
-
-export { auth, db, isDemoMode };
