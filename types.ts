@@ -1,5 +1,4 @@
 
-
 export enum ConstructionPhase {
     PLANNING = 'Planejamento',
     FOUNDATION = 'Fundação',
@@ -53,7 +52,7 @@ export interface Task {
 
 export interface Contact {
     name: string;
-    role: string; // Cargo (Engenheiro, Comprador, Mestre de Obras, etc.)
+    role: string; 
     phone: string;
     email: string;
 }
@@ -62,15 +61,11 @@ export interface ConstructionSite {
     id: string;
     builderName: string;
     siteName: string;
-    
-    // New Structure for Multiple Contacts
+    cep?: string;
     contacts: Contact[];
-
-    // Deprecated fields (kept for backward compatibility during migration)
     responsibleName?: string;
     phone?: string;
     email?: string;
-
     address: string;
     neighborhood: string; 
     lat?: string; 
